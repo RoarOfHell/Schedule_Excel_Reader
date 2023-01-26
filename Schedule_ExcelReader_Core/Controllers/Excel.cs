@@ -15,7 +15,7 @@ public class Excel
     private readonly string fileDirectory;
     private DataTable dataTable;
     private bool checkRead;
-    private List<ScheduleExcelColumn> scheduleExcelColumns;
+    private Dictionary<ScheduleExcelColumn, int> scheduleExcelColumns;
 
     public Excel(string fileDirectory)
     {
@@ -27,11 +27,11 @@ public class Excel
 
     private string GetData(int i, ScheduleExcelColumn exelColumn)
     {
-        return dataTable.Rows[i].ItemArray[scheduleExcelColumns.IndexOf(exelColumn)].ToString();
+        return dataTable.Rows[i].ItemArray[scheduleExcelColumns[exelColumn]].ToString();
     }
-    private List<ScheduleExcelColumn> GetScheduleColumn()
+    private Dictionary<ScheduleExcelColumn, int> GetScheduleColumn()
     {
-        List<ScheduleExcelColumn> result = new();
+        Dictionary<ScheduleExcelColumn, int> result = new();
 
         for (int i = 0; i < dataTable.Rows.Count; i++)
         {
@@ -51,12 +51,12 @@ public class Excel
                 };
                 if (element.ToLower() == "номер пары")
                 {
-                    result.Add(ScheduleExcelColumn.NumCouple);
-                    result.Add(ScheduleExcelColumn.StudyGroup);
+                    result.Add(ScheduleExcelColumn.NumCouple, j);
+                    result.Add(ScheduleExcelColumn.StudyGroup, j);
                     continue;
                 }
 
-                result.Add(addItem);
+                result.Add(addItem, j);
             }
             break;
         }
