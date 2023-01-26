@@ -9,99 +9,114 @@ using System.Linq;
 using System.Text;
 using System.Threading.Tasks;
 
-namespace Schedule_ExcelReader_Core.Controllers
+namespace Schedule_ExcelReader_Core.Controllers;
+public class Excel
 {
-    public static class Excel
+    private readonly string fileDirectory;
+    private DataTable dataTable;
+    private bool checkRead;
+    private List<ScheduleExcelColumn> scheduleExcelColumns;
+
+    public Excel(string fileDirectory)
     {
-        public static Schedule ReadScheduleFromExcel(string fileDirectory)
+        if (fileDirectory is null || fileDirectory == "") throw new Exception("Empty filename");
+
+        this.fileDirectory = fileDirectory;
+        checkRead = false;
+    }
+
+    private string GetData(int i, ScheduleExcelColumn exelColumn)
+    {
+        return dataTable.Rows[i].ItemArray[scheduleExcelColumns.IndexOf(exelColumn)].ToString();
+    }
+    private List<ScheduleExcelColumn> GetScheduleColumn()
+    {
+        List<ScheduleExcelColumn> result = new();
+
+        for (int i = 0; i < dataTable.Rows.Count; i++)
         {
-            System.Text.Encoding.RegisterProvider(System.Text.CodePagesEncodingProvider.Instance);
-            Schedule schedule = new Schedule();
+            if (dataTable.Rows[i++].ItemArray[0].ToString().ToLower() != "учебная группа") continue;
 
-            if (fileDirectory == null || fileDirectory == "" || (!Path.GetFileName(fileDirectory).EndsWith(".xls") && !Path.GetFileName(fileDirectory).EndsWith(".xlsx")))
-                return null;
-
-            using (FileStream stream = File.Open($"{fileDirectory}", FileMode.Open, FileAccess.Read))
+            for (int j = 0; j < dataTable.Rows[i].ItemArray.Length; j++)
             {
-                using (var edr = ExcelReaderFactory.CreateReader(stream))
+                string element = dataTable.Rows[i].ItemArray[j].ToString();
+                if (element is null || element.Trim() == "") continue;
+
+                ScheduleExcelColumn addItem = element.ToLower() switch
                 {
-                    DataSet dataSet = edr.AsDataSet();
-                    DataView dtView = dataSet.Tables[0].AsDataView();
-
-                    schedule.Date = Date.ExtractFromString(dtView.Table.Rows[0].ItemArray[0].ToString());
-
-                    Dictionary<ScheduleExcelColumn, int> keyValuePairs = GetKeysSchedule(dtView);
-
-                    List<Group> group = new List<Group>();
-
-                    for (int i = 3; i < dtView.Table.Rows.Count; i++)
-                    {
-                        if (dtView.Table.Rows[i].ItemArray[0].ToString().ToLower() == "номер пары") continue;
-                        var groupName = dtView.Table.Rows[i].ItemArray[keyValuePairs.Where(p => p.Key == ScheduleExcelColumn.StudyGroup).Select(p => p.Value).FirstOrDefault()].ToString();
-                        if (groupName.Length > 1)
-                        {
-                            group.Add(new Group() { NameGroup = groupName, Couples = new List<Couple>() });
-                            continue;
-                        }
-                        int numCouple = 0;
-                        if (!int.TryParse(dtView.Table.Rows[i].ItemArray[keyValuePairs.Where(p => p.Key == ScheduleExcelColumn.NumCouple).Select(p => p.Value).FirstOrDefault()].ToString(), out numCouple))
-                            continue;
-                        var discipline = dtView.Table.Rows[i].ItemArray[keyValuePairs.Where(p => p.Key == ScheduleExcelColumn.Discipline).Select(p => p.Value).FirstOrDefault()].ToString();
-                        var auditorium = dtView.Table.Rows[i].ItemArray[keyValuePairs.Where(p => p.Key == ScheduleExcelColumn.Auditorium).Select(p => p.Value).FirstOrDefault()].ToString();
-                        var teacher = dtView.Table.Rows[i].ItemArray[keyValuePairs.Where(p => p.Key == ScheduleExcelColumn.Teacher).Select(p => p.Value).FirstOrDefault()].ToString();
-
-                        group[group.Count - 1].Couples.Add(new Couple()
-                        {
-                            Discipline = discipline,
-                            Auditorium = auditorium,
-                            Teacher = teacher,
-                            NumCouple = numCouple
-                        });
-                    }
-                    schedule.Groups = group;
+                    "дисциплина" => ScheduleExcelColumn.Discipline,
+                    "преподаватель" => ScheduleExcelColumn.Teacher,
+                    "аудитория" => ScheduleExcelColumn.Auditorium,
+                    _ => ScheduleExcelColumn.None // Без этого предуприжения даются если с ним буде тне работать убери
+                };
+                if (element.ToLower() == "номер пары")
+                {
+                    result.Add(ScheduleExcelColumn.NumCouple);
+                    result.Add(ScheduleExcelColumn.StudyGroup);
+                    continue;
                 }
 
+                result.Add(addItem);
             }
-            return schedule;
-
+            break;
         }
 
-        private static Dictionary<ScheduleExcelColumn, int> GetKeysSchedule(DataView dtView)
+        return result;
+    }
+    public void ReadExel()
+    {
+        Encoding.RegisterProvider(CodePagesEncodingProvider.Instance);
+
+        FileInfo file = new(fileDirectory);
+
+        if (!file.Exists && !file.Name.EndsWith(".xls") && !file.Name.EndsWith(".xlsx")) throw new Exception("File does not exist");
+
+        using FileStream stream = File.Open(fileDirectory, FileMode.Open, FileAccess.Read);
+        using var edr = ExcelReaderFactory.CreateReader(stream);
+
+        dataTable = edr
+            .AsDataSet()
+            .Tables[0]
+            .AsDataView()
+            .Table;
+
+        scheduleExcelColumns = GetScheduleColumn();
+
+        checkRead = true;
+    }
+    public Schedule ToSchedule()
+    {
+        if (!checkRead) throw new Exception("You dont read file");
+
+        Schedule schedule = new()
         {
-            Dictionary<ScheduleExcelColumn, int> result = new Dictionary<ScheduleExcelColumn, int>();
+            Date = Date.ExtractFromString(dataTable.Rows[0].ItemArray[0].ToString())
+        };
+        DataRowCollection dataRowCollection = dataTable.Rows;
 
-            for (int i = 0; i < dtView.Table.Rows.Count; i++)
-                {
-                if (dtView.Table.Rows[i++].ItemArray[0].ToString().ToLower() == "учебная группа")
-                {
-                    for (int j = 0; j < dtView.Table.Rows[i].ItemArray.Count(); j++)
-                    {
-                        if (dtView.Table.Rows[i].ItemArray[j].ToString() != null && dtView.Table.Rows[i].ItemArray[j].ToString().Trim() != "")
-                        {
-                            switch (dtView.Table.Rows[i].ItemArray[j].ToString().ToLower())
-                            {
-                                case "номер пары":
-                                    result.Add(ScheduleExcelColumn.NumCouple, j);
-                                    result.Add(ScheduleExcelColumn.StudyGroup, j);
-                                    break;
-                                case "дисциплина":
-                                    result.Add(ScheduleExcelColumn.Discipline, j);
-                                    break;
-                                case "преподаватель":
-                                    result.Add(ScheduleExcelColumn.Teacher, j);
-                                    break;
-                                case "аудитория":
-                                    result.Add(ScheduleExcelColumn.Auditorium, j);
-                                    break;
-                            }
-                        }
-                        
-                    }
-                    break;
-                }
+        List<Group> group = new();
+
+        for (int i = 3; i < dataRowCollection.Count; i++)
+        {
+            if (dataRowCollection[i].ItemArray[0].ToString().ToLower() != "номер пары") continue;
+            var groupName = GetData(i, ScheduleExcelColumn.StudyGroup);
+            if (groupName.Length > 1)
+            {
+                group.Add(new Group() { NameGroup = groupName, Couples = new List<Couple>() });
+                continue;
             }
 
-            return result;
+            if (!int.TryParse(GetData(i, ScheduleExcelColumn.NumCouple), out int numCouple)) continue;
+            group[^1].Couples.Add(new()
+            {
+                Discipline = GetData(i, ScheduleExcelColumn.Discipline),
+                Auditorium = GetData(i, ScheduleExcelColumn.Auditorium),
+                Teacher = GetData(i, ScheduleExcelColumn.Teacher),
+                NumCouple = numCouple
+            });
         }
+        schedule.Groups = group;
+
+        return schedule;
     }
 }
